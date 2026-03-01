@@ -112,7 +112,7 @@ Retrieve a specific drug record by ID.
 
 ## Sample Test Cases
 
-### Test 1: Upload Single Drug
+### Test 1: Upload Single Drug (JSON Format)
 ```bash
 curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
   -H 'Content-Type: application/json' \
@@ -131,29 +131,67 @@ curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
 }
 ```
 
-### Test 2: Upload Multiple Drugs
+### Test 2: Upload CSV File Directly
+
+**Step 1:** Create a CSV file named `sample_drugs.csv` with the following content:
+```csv
+drug_name,target,efficacy
+Aspirin,COX-1,85.5
+Ibuprofen,COX-2,78.3
+Naproxen,COX-1/COX-2,82.1
+```
+
+**Step 2:** Save the file in your current directory
+
+**Step 3:** Run the following curl command:
+```bash
+curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
+  -H 'Content-Type: text/csv' \
+  --data-binary @sample_drugs.csv
+```
+
+**Note:** Make sure you're in the same directory as the CSV file, or provide the full path:
+```bash
+curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
+  -H 'Content-Type: text/csv' \
+  --data-binary @/path/to/sample_drugs.csv
+```
+
+**Expected Response:**
+```json
+{
+  "message": "CSV data uploaded successfully",
+  "records_stored": 3,
+  "validation_summary": {
+    "total_rows": 3,
+    "valid_rows": 3
+  }
+}
+```
+
+### Test 3: Upload Multiple Drugs (JSON Format)
 ```bash
 curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
   -H 'Content-Type: application/json' \
   -d '{"csv_data": "drug_name,target,efficacy\nAspirin,COX-1,85.5\nIbuprofen,COX-2,78.3\nNaproxen,COX-1/COX-2,82.1"}'
 ```
 
-### Test 3: Retrieve All Data
+### Test 4: Retrieve All Data
 ```bash
 curl -X GET https://YOUR_API_ENDPOINT/dev/data
 ```
 
-### Test 4: Filter by Drug Name
+### Test 5: Filter by Drug Name
 ```bash
 curl -X GET "https://YOUR_API_ENDPOINT/dev/data?drug_name=Aspirin"
 ```
 
-### Test 5: Filter by Minimum Efficacy
+### Test 6: Filter by Minimum Efficacy
 ```bash
 curl -X GET "https://YOUR_API_ENDPOINT/dev/data?min_efficacy=80"
 ```
 
-### Test 6: Invalid CSV (Missing Required Field)
+### Test 7: Invalid CSV (Missing Required Field)
 ```bash
 curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
   -H 'Content-Type: application/json' \
@@ -168,7 +206,7 @@ curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
 }
 ```
 
-### Test 7: Invalid Efficacy Value
+### Test 8: Invalid Efficacy Value
 ```bash
 curl -X POST https://YOUR_API_ENDPOINT/dev/upload \
   -H 'Content-Type: application/json' \

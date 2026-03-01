@@ -57,6 +57,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def handle_csv_upload(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle CSV file upload and validation
+    Supports both JSON payload with csv_data field and direct CSV file upload
     
     Args:
         event: API Gateway event containing the CSV file data
@@ -65,17 +66,28 @@ def handle_csv_upload(event: Dict[str, Any]) -> Dict[str, Any]:
         Dict containing response with upload status and validation results
     """
     try:
-        # Parse request body (could be base64 encoded for binary data)
         body = event.get('body', '')
         is_base64_encoded = event.get('isBase64Encoded', False)
+        content_type = event.get('headers', {}).get('Content-Type', '') or event.get('headers', {}).get('content-type', '')
         
-        # Decode base64 if necessary (for file uploads through API Gateway)
+        # Decode base64 if necessary
         if is_base64_encoded:
             body = base64.b64decode(body).decode('utf-8')
         
-        # Parse JSON body to extract CSV content
-        request_data = json.loads(body) if body else {}
-        csv_content = request_data.get('csv_data', '')
+        csv_content = ''
+        
+        # Check if it's a direct CSV file upload (text/csv or multipart/form-data)
+        if 'text/csv' in content_type or 'multipart/form-data' in content_type:
+            # Direct CSV file upload
+            csv_content = body
+        else:
+            # JSON payload with csv_data field
+            try:
+                request_data = json.loads(body) if body else {}
+                csv_content = request_data.get('csv_data', '')
+            except json.JSONDecodeError:
+                # If JSON parsing fails, treat as raw CSV
+                csv_content = body
         
         if not csv_content:
             return create_response(400, {'error': 'No CSV data provided'})
@@ -102,8 +114,6 @@ def handle_csv_upload(event: Dict[str, Any]) -> Dict[str, Any]:
             }
         })
         
-    except json.JSONDecodeError:
-        return create_response(400, {'error': 'Invalid JSON format'})
     except Exception as e:
         logger.error(f"Error in CSV upload: {str(e)}")
         return create_response(500, {'error': 'Failed to process CSV upload'})
