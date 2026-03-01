@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Drug Discovery API Infrastructure - Lambda, API Gateway, and DynamoDB'
+
+Parameters:
+  # Environment parameter for resource naming
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name for resource tagging'
+    AllowedValues:
+      - 'dev'
+      - 'staging'
+      - 'prod'
+
+Resources:
+  # DynamoDB Table for storing drug discovery data
+  DrugDiscoveryTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'drug-discovery-data'
+      # Define primary key structure
+      AttributeDefinitions:
+        - AttributeName: 'drug_id'
+          AttributeType: 'S'  # String type
+      KeySchema:
+        - AttributeName: 'drug_id'
+          KeyType: 'HASH'  # Partition key
+      # Use on-demand billing for variable workloads
+      BillingMode: 'PAY_PER_REQUEST'
+      # Enable point-in-time recovery for data protection
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      # Add tags for resource management
+      Tags:
+        - Key: 'Environment'
+          Value: !Ref Environment
+        - Key: 'Project'
+          Value: 'DrugDiscoveryAPI'
+
+  # IAM Role for Lambda function execution
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'DrugDiscoveryLambdaRole'
+      # Trust policy allowing Lambda service to assume this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      # Attach basic Lambda execution policy
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      # Custom policy for DynamoDB access
+      Policies:
+        - PolicyName: 'DynamoDBAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:BatchWriteItem'
+                Resource: !GetAtt DrugDiscoveryTable.Arn
+
+  # Lambda function for processing API requests
+  DrugDiscoveryLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'drug-discovery-api'
+      Runtime: 'python3.9'
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      # Inline code - in production, use S3 bucket for deployment
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {"statusCode": 200, "body": json.dumps("Function deployed")}
+      # Function configuration
+      Timeout: 30  # 30 seconds timeout
+      MemorySize: 256  # 256 MB memory allocation
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DrugDiscoveryTable
+          ENVIRONMENT: !Ref Environment
+      Tags:
+        - Key: 'Environment'
+          Value: !Ref Environment
+        - Key: 'Project'
+          Value: 'DrugDiscoveryAPI'
+
+  # REST API Gateway
+  DrugDiscoveryAPI:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: 'drug-discovery-api'
+      Description: 'REST API for drug discovery data management'
+      # API configuration
+      EndpointConfiguration:
+        Types:
+          - 'REGIONAL'  # Regional endpoint for better performance
+
+  # Request validator for API Gateway
+  RequestValidator:
+    Type: 'AWS::ApiGateway::RequestValidator'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ValidateRequestBody: true
+      ValidateRequestParameters: true
+
+  # API Gateway resource for /upload endpoint
+  UploadResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ParentId: !GetAtt DrugDiscoveryAPI.RootResourceId
+      PathPart: 'upload'
+
+  # API Gateway resource for /data endpoint
+  DataResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ParentId: !GetAtt DrugDiscoveryAPI.RootResourceId
+      PathPart: 'data'
+
+  # API Gateway resource for /data/{id} endpoint
+  DataIdResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ParentId: !Ref DataResource
+      PathPart: '{id}'
+
+  # POST method for /upload endpoint
+  UploadMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ResourceId: !Ref UploadResource
+      HttpMethod: 'POST'
+      AuthorizationType: 'NONE'  # No authentication for demo
+      # Integration with Lambda function
+      Integration:
+        Type: 'AWS_PROXY'  # Lambda proxy integration
+        IntegrationHttpMethod: 'POST'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DrugDiscoveryLambda.Arn}/invocations'
+
+  # GET method for /data endpoint
+  DataGetMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ResourceId: !Ref DataResource
+      HttpMethod: 'GET'
+      AuthorizationType: 'NONE'
+      # Integration with Lambda function
+      Integration:
+        Type: 'AWS_PROXY'
+        IntegrationHttpMethod: 'POST'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DrugDiscoveryLambda.Arn}/invocations'
+
+  # GET method for /data/{id} endpoint
+  DataIdGetMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      ResourceId: !Ref DataIdResource
+      HttpMethod: 'GET'
+      AuthorizationType: 'NONE'
+      # Integration with Lambda function
+      Integration:
+        Type: 'AWS_PROXY'
+        IntegrationHttpMethod: 'POST'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DrugDiscoveryLambda.Arn}/invocations'
+
+  # Lambda permission for API Gateway to invoke the function
+  LambdaApiGatewayPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref DrugDiscoveryLambda
+      Action: 'lambda:InvokeFunction'
+      Principal: 'apigateway.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DrugDiscoveryAPI}/*/*/*'
+
+  # API Gateway deployment
+  ApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - UploadMethod
+      - DataGetMethod
+      - DataIdGetMethod
+    Properties:
+      RestApiId: !Ref DrugDiscoveryAPI
+      StageName: !Ref Environment
+
+# Output important resource information
+Outputs:
+  # API Gateway endpoint URL
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${DrugDiscoveryAPI}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  # DynamoDB table name
+  TableName:
+    Description: 'DynamoDB table name'
+    Value: !Ref DrugDiscoveryTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  # Lambda function ARN
+  LambdaFunctionArn:
+    Description: 'Lambda function ARN'
+    Value: !GetAtt DrugDiscoveryLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaArn'
